@@ -37,7 +37,7 @@ public class Main
 	}
 	public static void main(String[] args)
 	{
-		new Main().parseObjFile("3d_models/CuteOcto.obj");
+		new Main().parseObjFile("3d_models/pieceL.obj");
 	}
 	
 	//
@@ -58,7 +58,7 @@ public class Main
 	        Parse obj = new Parse(builder, new File(filename).toURI().toURL());
 	        
 	        // Enumeration des sommets
-	        
+
 	        for (FaceVertex vertex : builder.faceVerticeList)
 	        {
 	        	float x = vertex.v.x;
@@ -67,6 +67,7 @@ public class Main
 	        	
 				aa.enlarge(new Vec3f(x,y,z));
 	        }
+			
 			aa.addMargin(new Vec3f(10,10,0));
 
 			Vec3f boxMin = aa.getMin();
@@ -87,11 +88,14 @@ public class Main
 	        		FaceVertex vertex1 = builder.faceVerticeList.get(vertexIndex1);
 	        		FaceVertex vertex2 = builder.faceVerticeList.get(vertexIndex2);
 	        		FaceVertex vertex3 = builder.faceVerticeList.get(vertexIndex3);
+
+					if(!((vertex1.v.z == vertex2.v.z) && (vertex2.v.z  == vertex3.v.z))){
 	        		
-	        		triangles.add(new float[] {
-						vertex1.v.x, vertex1.v.y, vertex1.v.z,
-						vertex2.v.x, vertex2.v.y, vertex2.v.z,
-						vertex3.v.x, vertex3.v.y, vertex3.v.z });
+						triangles.add(new float[] {
+							vertex1.v.x, vertex1.v.y, vertex1.v.z,
+							vertex2.v.x, vertex2.v.y, vertex2.v.z,
+							vertex3.v.x, vertex3.v.y, vertex3.v.z });
+					}
 	        	}
 	        }
 			int width  = (int) Math.ceil((boxMax.x - boxMin.x) / PIXEL_SIZE);
