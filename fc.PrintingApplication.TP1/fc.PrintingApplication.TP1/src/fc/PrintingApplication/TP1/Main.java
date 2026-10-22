@@ -6,6 +6,8 @@ import java.awt.geom.Line2D;
 import java.awt.image.BufferedImage;
 import java.io.File;
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.Iterator;
 import java.util.List;
 
 import javax.imageio.ImageIO;
@@ -23,9 +25,10 @@ public class Main
 	static final float LAYER_HEIGHT = 0.20f;  // pas vertical (mm)
 	static final float PIXEL_SIZE   = 0.05f;  // 1 pixel = 0,05 mm
 	static final float MARGIN_XY    = 10f;    // 1 cm de chaque côté en X et Y (mm)
+	static final boolean TRANCHE_PLEINE = false;
 
 
-	/** Segment de tranche : tous les sommets partagent la même cote Z. */
+	// Segment de tranche : tous les sommets partagent la même cote Z. 
 	static class Segment
 	{
 		final Vec3f a, b;
@@ -35,9 +38,81 @@ public class Main
 			this.b = new Vec3f(bx, by, z);
 		}
 	}
+
+	static  class Edge {
+		public int yMin;
+		public int yMax;
+		public float xTop;
+		public float iSlope;
+
+		Edge(float ax, float ay, float bx, float by) {
+        if (ay > by) { float t=ax; ax=bx; bx=t; t=ay; ay=by; by=t; }
+        iSlope = (bx - ax) / (by - ay);          // appelé seulement si ay != by
+        yMin = (int)Math.ceil(ay);
+        yMax = (int)Math.ceil(by);               // exclusif
+        xTop = ax + (yMin - ay) * iSlope;        // x exact à la ligne yMin
+    	}
+	}
+
+	public void rasterEdge(List<Segment> segs, float boxMinX, float boxMaxY,
+                       int width, int height, File file) {
+		BufferedImage image = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
+
+		List<Edge> all = new ArrayList<>();
+		for (Segment s : segs) {
+			float ax = (s.a.x - boxMinX) / PIXEL_SIZE, ay = (boxMaxY - s.a.y) / PIXEL_SIZE;
+			float bx = (s.b.x - boxMinX) / PIXEL_SIZE, by = (boxMaxY - s.b.y) / PIXEL_SIZE;
+			if (ay == by) continue;                              // horizontale ignorée
+			Edge e = new Edge(ax, ay, bx, by);
+			if (e.yMin < e.yMax) all.add(e);                     // ne croise aucune ligne de scan
+		}
+		all.sort(Comparator.comparingInt(e -> e.yMin));
+
+		List<Edge> active = new ArrayList<>();
+		int next = 0;
+		for (int y = 0; y < height; y++) {
+			while (next < all.size() && all.get(next).yMin <= y) active.add(all.get(next++));
+			for (Iterator<Edge> it = active.iterator(); it.hasNext();)
+				if (it.next().yMax <= y) it.remove();
+			active.sort(Comparator.comparingDouble(e -> e.xTop));
+			for (int i = 0; i + 1 < active.size(); i += 2)
+				scanLine(image, Math.round(active.get(i).xTop), Math.round(active.get(i+1).xTop), y);
+			for (Edge e : active) e.xTop += e.iSlope;
+		}
+		try { ImageIO.write(image, "png", file); } catch (Exception e) { e.printStackTrace(); }
+	}
+
+	static public Edge[] sortEdges(Edge[] edgeList){
+        for(int i=0; i<edgeList.length; i++){
+            for(int j=0; j<edgeList.length-i-1; j++){
+                if(edgeList[j].yMin > edgeList[j+1].yMin){
+                    Edge temp = edgeList[j];
+                    edgeList[j] = edgeList[j+1];
+                    edgeList[j+1] = temp;
+                }
+            }
+        }
+        return edgeList;
+    }
+
+	static public void scanLine(BufferedImage image, int x1, int x2, int y){
+        int xMin;
+        int xMax;
+        if(x1<x2){
+            xMin = x1;
+            xMax = x2;
+        }
+        else{
+            xMin = x2;
+            xMax = x1;
+        }
+        xMin = Math.max(xMin, 0); xMax = Math.min(xMax, image.getWidth() - 1);
+		for (int x = xMin; x <= xMax; x++) image.setRGB(x, y, 0xFFFFFF);
+    }
+
 	public static void main(String[] args)
 	{
-		new Main().parseObjFile("3d_models/pieceL.obj");
+		new Main().parseObjFile("3d_models/CuteOcto.obj");
 	}
 	
 	//
@@ -101,15 +176,23 @@ public class Main
 			int width  = (int) Math.ceil((boxMax.x - boxMin.x) / PIXEL_SIZE);
 			int height = (int) Math.ceil((boxMax.y - boxMin.y) / PIXEL_SIZE);
 			int nbSlices = (int) Math.floor((boxMax.z - boxMin.z) / LAYER_HEIGHT + 1e-4f) + 1;
-			File outDir = new File("tranches");
+			File outDir;
+			if(!TRANCHE_PLEINE)
+				outDir = new File("tranchesCreuse");
+			if(TRANCHE_PLEINE)
+				outDir = new File("tranchesPleine");
 			outDir.mkdirs();
 
 			for (int k = 0; k < nbSlices+1; k++)
 			{
 				float zCut = boxMin.z + k * LAYER_HEIGHT;
 				List<Segment> segments = sliceAtZ(triangles, zCut);
-				renderSlice(segments, boxMin.x, boxMax.y, width, height,
-						new File(outDir, String.format("tranche_%04d.png", k)));
+				if(!TRANCHE_PLEINE)
+					renderSlice(segments, boxMin.x, boxMax.y, width, height,
+							new File(outDir, String.format("tranche_%04d.png", k)));
+				if (TRANCHE_PLEINE)
+					rasterEdge(segments, boxMin.x, boxMax.y, width, height, new File(outDir, String.format("tranche_%04d.png", k)));
+
 			}
 			System.out.println(nbSlices + " tranches écrites dans " + outDir.getAbsolutePath()
 					+ " (bitmaps " + width + "x" + height + ")");
